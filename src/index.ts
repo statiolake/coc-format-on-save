@@ -42,10 +42,10 @@ async function format() {
   }
 
   try {
-    await commands.executeCommand('editor.action.formatDocument');
     if (config.get<boolean>('organizeImportOnFormat')) {
       await commands.executeCommand('editor.action.organizeImport');
     }
+    await commands.executeCommand('editor.action.formatDocument');
   } catch (e) {
     window.showErrorMessage('Failed to format document');
   }
