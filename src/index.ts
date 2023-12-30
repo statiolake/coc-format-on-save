@@ -1,4 +1,4 @@
-import {Document, ExtensionContext, WorkspaceConfiguration, commands, languages, window, workspace} from 'coc.nvim';
+import { Document, ExtensionContext, WorkspaceConfiguration, commands, languages, window, workspace } from 'coc.nvim';
 
 export async function activate(context: ExtensionContext): Promise<void> {
   const config = getConfig();
