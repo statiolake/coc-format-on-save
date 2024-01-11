@@ -115,19 +115,16 @@ function overrideFormatOnSaveOnMemory(value: boolean | undefined): boolean | und
   const oldValue = workspace.getConfiguration('coc.preferences').get<boolean>('formatOnSave');
   // @ts-ignore
   workspace.configurations.updateMemoryConfig({
-    'coc.preferences.formatOnSave': value,
-  });
-  // HACK: Memory configuration is sadly overwritten by workspace
-  // (:CocLocalConfig) configuration.
-  // To disable formatting by coc.nvim even when formatOnSave is overwritten
-  // by workspace configuration, we also set formatOnSaveFiletypes to empty
-  // array. Of course if formatOnSaveFiletypes is overwritten by workspace
-  // configuration, this hack does not work, but it rarely happens I hope,
-  // considering that now there is scoped configuration
-  // (like "[python]": {...}).
-  // @ts-ignore
-  workspace.configurations.updateMemoryConfig({
+    // HACK: Memory configuration is sadly overwritten by workspace
+    // (:CocLocalConfig) configuration.
+    // To disable formatting by coc.nvim even when formatOnSave is overwritten
+    // by workspace configuration, we also set formatOnSaveFiletypes to empty
+    // array. Of course if formatOnSaveFiletypes is overwritten by workspace
+    // configuration, this hack does not work, but it rarely happens I hope,
+    // considering that now there is scoped configuration
+    // (like "[python]": {...}).
     'coc.preferences.formatOnSaveFiletypes': value === false ? [] : undefined,
+    'coc.preferences.formatOnSave': value,
   });
   return oldValue;
 }
@@ -136,19 +133,22 @@ function disableFormatOnSaveOnMemory(mode: 'start' | 'end'): void {
   overrideFormatOnSaveOnMemory(mode === 'start' ? false : undefined);
 }
 
-let formatOnSave: boolean | undefined;
+let formatOnSaveForCurrentSession: boolean | undefined;
 async function save(vimSaveCommand: VimSaveCommand, withFormat: boolean | undefined) {
-  formatOnSave = withFormat;
+  formatOnSaveForCurrentSession = withFormat;
   // Prevent coc.nvim from formatting on save
   disableFormatOnSaveOnMemory('start');
   await workspace.nvim.command(vimSaveCommand);
   disableFormatOnSaveOnMemory('end');
-  formatOnSave = undefined;
+  formatOnSaveForCurrentSession = undefined;
 }
 
 async function onBufWritePre() {
   const doc = await workspace.document;
-  if (formatOnSave === true || (formatOnSave === undefined && getRealFormatOnSave(doc))) {
+  if (
+    formatOnSaveForCurrentSession === true ||
+    (formatOnSaveForCurrentSession === undefined && getRealFormatOnSave(doc))
+  ) {
     doc.forceSync();
     await format(doc);
     doc.forceSync();
