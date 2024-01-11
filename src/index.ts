@@ -117,6 +117,18 @@ function overrideFormatOnSaveOnMemory(value: boolean | undefined): boolean | und
   workspace.configurations.updateMemoryConfig({
     'coc.preferences.formatOnSave': value,
   });
+  // HACK: Memory configuration is sadly overwritten by workspace
+  // (:CocLocalConfig) configuration.
+  // To disable formatting by coc.nvim even when formatOnSave is overwritten
+  // by workspace configuration, we also set formatOnSaveFiletypes to empty
+  // array. Of course if formatOnSaveFiletypes is overwritten by workspace
+  // configuration, this hack does not work, but it rarely happens I hope,
+  // considering that now there is scoped configuration
+  // (like "[python]": {...}).
+  // @ts-ignore
+  workspace.configurations.updateMemoryConfig({
+    'coc.preferences.formatOnSaveFiletypes': value === false ? [] : undefined,
+  });
   return oldValue;
 }
 
