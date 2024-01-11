@@ -12,17 +12,25 @@ import {
 
 const channel = window.createOutputChannel('format-on-save');
 
+type VimSaveCommand = 'write' | 'write!' | 'wall' | 'wall!';
+
 export async function activate(context: ExtensionContext): Promise<void> {
   const config = getConfig();
   if (!config.get<boolean>('enabled')) return;
 
   context.subscriptions.push(
-    commands.registerCommand('format-on-save.format', format),
     workspace.registerAutocmd({
       event: 'BufWritePre',
       request: true,
-      callback: bufWritePreCallback,
-    })
+      callback: onBufWritePre,
+    }),
+
+    commands.registerCommand('format-on-save.format', format),
+
+    commands.registerCommand('format-on-save.saveWithoutFormat', () => save('write', false)),
+    commands.registerCommand('format-on-save.forceSaveWithoutFormat', () => save('write!', false)),
+    commands.registerCommand('format-on-save.saveAllWithoutFormat', () => save('wall', false)),
+    commands.registerCommand('format-on-save.forceSaveAllWithoutFormat', () => save('wall!', false))
   );
 }
 
@@ -48,11 +56,8 @@ async function hasOrganizeImport(doc: Document): Promise<boolean> {
   return codeActions && codeActions.length;
 }
 
-async function format() {
+async function format(doc: Document) {
   const config = getConfig();
-  if (!config.get<boolean>('formatOnSave')) return;
-
-  const doc = await workspace.document;
   if (config.get<boolean>('sortCocSettingsJson') && isCocConfigFile(doc)) {
     try {
       await commands.executeCommand('formatJson', '--sort-keys');
@@ -68,7 +73,7 @@ async function format() {
   }
 
   try {
-    if (config.get<boolean>('organizeImportOnFormat')) {
+    if (config.get<boolean>('organizeImportWithFormat')) {
       if (await hasOrganizeImport(doc)) {
         channel.appendLine('organize imports');
         await commands.executeCommand('editor.action.organizeImport');
@@ -76,6 +81,7 @@ async function format() {
         channel.appendLine('organizeImport is not supported');
       }
     }
+
     channel.appendLine('format document');
     await commands.executeCommand('editor.action.formatDocument');
   } catch (e) {
@@ -83,12 +89,30 @@ async function format() {
   }
 }
 
-async function bufWritePreCallback() {
+function getFormatOnSave(doc?: Document): boolean | undefined {
+  // @ts-ignore
+  const config = workspace.getConfiguration('coc.preferences', doc?.textDocument);
+  return config.get('formatOnSave');
+}
+
+function setFormatOnSave(value: boolean | undefined): void {
+  // @ts-ignore
+  workspace.configurations.updateMemoryConfig({
+    'coc.preferences.formatOnSave': value,
+  });
+}
+
+async function save(vimSaveCommand: VimSaveCommand, withFormat: false) {
+  setFormatOnSave(withFormat);
+  await workspace.nvim.command(vimSaveCommand);
+  setFormatOnSave(undefined);
+}
+
+async function onBufWritePre() {
   const doc = await workspace.document;
-  doc.forceSync();
-  const skip_once = await doc.buffer.getVar('coc_format_on_save_skip_once');
-  await doc.buffer.setVar('coc_format_on_save_skip_once', false);
-  if (skip_once) return;
-  await format();
-  doc.forceSync();
+  if (getFormatOnSave(doc)) {
+    doc.forceSync();
+    await format(doc);
+    doc.forceSync();
+  }
 }

@@ -53,12 +53,7 @@
           "default": true,
           "description": "Sort coc-settings.json"
         },
-        "format-on-save.formatOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Format on save"
-        },
-        "format-on-save.organizeImportOnFormat": {
+        "format-on-save.organizeImportWithFormat": {
           "type": "boolean",
           "default": true,
           "description": "Organize import on save too"
