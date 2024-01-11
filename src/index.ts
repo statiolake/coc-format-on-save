@@ -27,6 +27,16 @@ export async function activate(context: ExtensionContext): Promise<void> {
 
     commands.registerCommand('format-on-save.format', format),
 
+    commands.registerCommand('format-on-save.save', () => save('write', undefined)),
+    commands.registerCommand('format-on-save.forceSave', () => save('write!', undefined)),
+    commands.registerCommand('format-on-save.saveAll', () => save('wall', undefined)),
+    commands.registerCommand('format-on-save.forceSaveAll', () => save('wall!', undefined)),
+
+    commands.registerCommand('format-on-save.saveWithFormat', () => save('write', true)),
+    commands.registerCommand('format-on-save.forceSaveWithFormat', () => save('write!', true)),
+    commands.registerCommand('format-on-save.saveAllWithFormat', () => save('wall', true)),
+    commands.registerCommand('format-on-save.forceSaveAllWithFormat', () => save('wall!', true)),
+
     commands.registerCommand('format-on-save.saveWithoutFormat', () => save('write', false)),
     commands.registerCommand('format-on-save.forceSaveWithoutFormat', () => save('write!', false)),
     commands.registerCommand('format-on-save.saveAllWithoutFormat', () => save('wall', false)),
@@ -89,28 +99,44 @@ async function format(doc: Document) {
   }
 }
 
-function getFormatOnSave(doc?: Document): boolean | undefined {
-  // @ts-ignore
-  const config = workspace.getConfiguration('coc.preferences', doc?.textDocument);
-  return config.get('formatOnSave');
+function getRealFormatOnSave(doc?: Document): boolean | undefined {
+  // Reset memory overrides temporary to get actual formatOnSave value.
+  const overrided = overrideFormatOnSaveOnMemory(undefined);
+  const realFormatOnSave = workspace
+    // @ts-ignore
+    .getConfiguration('coc.preferences', doc?.textDocument)
+    .get<boolean>('formatOnSave');
+  overrideFormatOnSaveOnMemory(overrided);
+
+  return realFormatOnSave;
 }
 
-function setFormatOnSave(value: boolean | undefined): void {
+function overrideFormatOnSaveOnMemory(value: boolean | undefined): boolean | undefined {
+  const oldValue = workspace.getConfiguration('coc.preferences').get<boolean>('formatOnSave');
   // @ts-ignore
   workspace.configurations.updateMemoryConfig({
     'coc.preferences.formatOnSave': value,
   });
+  return oldValue;
 }
 
-async function save(vimSaveCommand: VimSaveCommand, withFormat: false) {
-  setFormatOnSave(withFormat);
+function disableFormatOnSaveOnMemory(mode: 'start' | 'end'): void {
+  overrideFormatOnSaveOnMemory(mode === 'start' ? false : undefined);
+}
+
+let formatOnSave: boolean | undefined;
+async function save(vimSaveCommand: VimSaveCommand, withFormat: boolean | undefined) {
+  formatOnSave = withFormat;
+  // Prevent coc.nvim from formatting on save
+  disableFormatOnSaveOnMemory('start');
   await workspace.nvim.command(vimSaveCommand);
-  setFormatOnSave(undefined);
+  disableFormatOnSaveOnMemory('end');
+  formatOnSave = undefined;
 }
 
 async function onBufWritePre() {
   const doc = await workspace.document;
-  if (getFormatOnSave(doc)) {
+  if (formatOnSave === true || (formatOnSave === undefined && getRealFormatOnSave(doc))) {
     doc.forceSync();
     await format(doc);
     doc.forceSync();
