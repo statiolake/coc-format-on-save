@@ -1,6 +1,6 @@
 {
   "name": "@statiolake/coc-format-on-save",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Format on save in coc",
   "author": "statiolake <statiolake@gmail.com>",
   "license": "MIT",
