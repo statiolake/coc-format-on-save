@@ -1,5 +1,6 @@
 import {
   CancellationTokenSource,
+  Disposable,
   Document,
   ExtensionContext,
   Range,
@@ -13,34 +14,53 @@ import {
 const channel = window.createOutputChannel('format-on-save');
 
 type VimSaveCommand = 'write' | 'write!' | 'wall' | 'wall!';
+type AutoFormatMode = 'auto' | 'always' | 'never';
 
 export async function activate(context: ExtensionContext): Promise<void> {
   const config = getConfig();
-  if (!config.get<boolean>('enabled')) return;
+  if (!config.get<boolean>('enabled')) {
+    channel.appendLine('coc-format-on-save extension is disabled');
+    return;
+  }
+
+  if (!disableCocFormatting()) {
+    channel.appendLine('disabling coc formatting failed.');
+    return;
+  }
 
   context.subscriptions.push(
     workspace.registerAutocmd({
       event: 'BufWritePre',
       request: true,
       callback: onBufWritePre,
-    }),
+    })
+  );
 
-    commands.registerCommand('format-on-save.format', format),
+  const registerCommand = (id: string, fn: (...args: any[]) => Promise<void>): Disposable => {
+    return commands.registerCommand(`format-on-save.${id}`, fn);
+  };
 
-    commands.registerCommand('format-on-save.save', () => save('write', undefined)),
-    commands.registerCommand('format-on-save.forceSave', () => save('write!', undefined)),
-    commands.registerCommand('format-on-save.saveAll', () => save('wall', undefined)),
-    commands.registerCommand('format-on-save.forceSaveAll', () => save('wall!', undefined)),
+  context.subscriptions.push(registerCommand('format', async () => await format(await workspace.document)));
 
-    commands.registerCommand('format-on-save.saveWithFormat', () => save('write', true)),
-    commands.registerCommand('format-on-save.forceSaveWithFormat', () => save('write!', true)),
-    commands.registerCommand('format-on-save.saveAllWithFormat', () => save('wall', true)),
-    commands.registerCommand('format-on-save.forceSaveAllWithFormat', () => save('wall!', true)),
+  context.subscriptions.push(
+    registerCommand('save', save),
+    registerCommand('forceSave', saveWith('write!', 'auto')),
+    registerCommand('saveAll', saveWith('wall', 'auto')),
+    registerCommand('forceSaveAll', saveWith('wall!', 'auto'))
+  );
 
-    commands.registerCommand('format-on-save.saveWithoutFormat', () => save('write', false)),
-    commands.registerCommand('format-on-save.forceSaveWithoutFormat', () => save('write!', false)),
-    commands.registerCommand('format-on-save.saveAllWithoutFormat', () => save('wall', false)),
-    commands.registerCommand('format-on-save.forceSaveAllWithoutFormat', () => save('wall!', false))
+  context.subscriptions.push(
+    registerCommand('saveWithFormat', saveWith('write', 'always')),
+    registerCommand('forceSaveWithFormat', saveWith('write!', 'always')),
+    registerCommand('saveAllWithFormat', saveWith('wall', 'always')),
+    registerCommand('forceSaveAllWithFormat', saveWith('wall!', 'always'))
+  );
+
+  context.subscriptions.push(
+    registerCommand('saveWithoutFormat', saveWith('write', 'never')),
+    registerCommand('forceSaveWithoutFormat', saveWith('write!', 'never')),
+    registerCommand('saveAllWithoutFormat', saveWith('wall', 'never')),
+    registerCommand('forceSaveAllWithoutFormat', saveWith('wall!', 'never'))
   );
 }
 
@@ -48,26 +68,9 @@ function getConfig(): WorkspaceConfiguration {
   return workspace.getConfiguration('format-on-save');
 }
 
-function isCocConfigFile(doc: Document): boolean {
-  return doc.uri.endsWith('coc-settings.json');
-}
-
-async function hasOrganizeImport(doc: Document): Promise<boolean> {
-  const range = Range.create(0, 0, doc.lineCount, 0);
-  const context = {
-    diagnostics: [],
-    only: ['source.organizeImports' /* CodeActionKind.SourceOrganizeImports */],
-    triggerKind: 1 /* CodeActionTriggerKind.Invoked */,
-  };
-  const tokenSource = new CancellationTokenSource();
-  // @ts-ignore
-  const codeActions = await languages.getCodeActions(doc.textDocument, range, context, tokenSource.token);
-  channel.appendLine(`codeActions: ${JSON.stringify(codeActions)}`);
-  return codeActions && codeActions.length;
-}
-
 async function format(doc: Document) {
   const config = getConfig();
+
   if (config.get<boolean>('sortCocSettingsJson') && isCocConfigFile(doc)) {
     try {
       await commands.executeCommand('formatJson', '--sort-keys');
@@ -76,15 +79,14 @@ async function format(doc: Document) {
     }
   }
 
-  // @ts-ignore
-  if (!languages.hasFormatProvider(doc.textDocument)) {
+  if (!hasFormatProvider(doc)) {
     void window.showWarningMessage('Format provider not found for current document');
     return;
   }
 
   try {
     if (config.get<boolean>('organizeImportWithFormat')) {
-      if (await hasOrganizeImport(doc)) {
+      if (await hasOrganizeImportProvider(doc)) {
         channel.appendLine('organize imports');
         await commands.executeCommand('editor.action.organizeImport');
       } else {
@@ -99,56 +101,72 @@ async function format(doc: Document) {
   }
 }
 
-function getRealFormatOnSave(doc?: Document): boolean | undefined {
-  // Reset memory overrides temporary to get actual formatOnSave value.
-  const overrided = overrideFormatOnSaveOnMemory(undefined);
-  const realFormatOnSave = workspace
-    // @ts-ignore
-    .getConfiguration('coc.preferences', doc?.textDocument)
-    .get<boolean>('formatOnSave');
-  overrideFormatOnSaveOnMemory(overrided);
-
-  return realFormatOnSave;
+function isCocConfigFile(doc: Document): boolean {
+  return doc.uri.endsWith('coc-settings.json');
 }
 
-function overrideFormatOnSaveOnMemory(value: boolean | undefined): boolean | undefined {
-  const oldValue = workspace.getConfiguration('coc.preferences').get<boolean>('formatOnSave');
+function hasFormatProvider(doc: Document): boolean {
+  // Ignore TypeScript because hasFormatProvider() is a hidden API.
+  // @ts-ignore
+  return languages.hasFormatProvider(doc.textDocument);
+}
+
+async function hasOrganizeImportProvider(doc: Document): Promise<boolean> {
+  const range = Range.create(0, 0, doc.lineCount, 0);
+  const context = {
+    diagnostics: [],
+    only: ['source.organizeImports' /* CodeActionKind.SourceOrganizeImports */],
+    triggerKind: 1 /* CodeActionTriggerKind.Invoked */,
+  };
+  const tokenSource = new CancellationTokenSource();
+  // @ts-ignore
+  const codeActions = await languages.getCodeActions(doc.textDocument, range, context, tokenSource.token);
+  channel.appendLine(`codeActions: ${JSON.stringify(codeActions)}`);
+  return codeActions && codeActions.length;
+}
+
+/**
+ * Override formatOnSaveFiletypes to disable formatting by coc.nvim. Returns
+ * false if `coc.preferences.formatOnSaveFiletypes` is set in coc.nvim config
+ * file.
+ */
+function disableCocFormatting(): boolean {
+  const config = workspace.getConfiguration('coc.preferences');
+  if (config.get<any[]>('formatOnSaveFiletypes') !== undefined) {
+    window.showErrorMessage(
+      'You use `coc.preferences.formatOnSaveFiletypes` option ' +
+        'in your coc.nvim config file. ' +
+        'This prevents coc-format-on-save from working correctly. ' +
+        'Also this property has been deprecated in coc.nvim side, ' +
+        'please use scoped configuration instead.'
+    );
+  }
+
+  // Ignore TypeScript because updateMemoryConfig() is a hidden API.
   // @ts-ignore
   workspace.configurations.updateMemoryConfig({
-    // HACK: Memory configuration is sadly overwritten by workspace
-    // (:CocLocalConfig) configuration.
-    // To disable formatting by coc.nvim even when formatOnSave is overwritten
-    // by workspace configuration, we also set formatOnSaveFiletypes to empty
-    // array. Of course if formatOnSaveFiletypes is overwritten by workspace
-    // configuration, this hack does not work, but it rarely happens I hope,
-    // considering that now there is scoped configuration
-    // (like "[python]": {...}).
-    'coc.preferences.formatOnSaveFiletypes': value === false ? [] : undefined,
-    'coc.preferences.formatOnSave': value,
+    'coc.preferences.formatOnSaveFiletypes': [],
   });
-  return oldValue;
+
+  return true;
 }
 
-function disableFormatOnSaveOnMemory(mode: 'start' | 'end'): void {
-  overrideFormatOnSaveOnMemory(mode === 'start' ? false : undefined);
+function saveWith(vimSaveCommand: VimSaveCommand, mode: AutoFormatMode): () => Promise<void> {
+  return async () => await save(vimSaveCommand, mode);
 }
 
-let formatOnSaveForCurrentSession: boolean | undefined;
-async function save(vimSaveCommand: VimSaveCommand, withFormat: boolean | undefined) {
-  formatOnSaveForCurrentSession = withFormat;
-  // Prevent coc.nvim from formatting on save
-  disableFormatOnSaveOnMemory('start');
+let autoFormatModeForCurrentSession: AutoFormatMode;
+async function save(vimSaveCommand: VimSaveCommand = 'write', mode: AutoFormatMode = 'auto') {
+  autoFormatModeForCurrentSession = mode;
   await workspace.nvim.command(vimSaveCommand);
-  disableFormatOnSaveOnMemory('end');
-  formatOnSaveForCurrentSession = undefined;
+  autoFormatModeForCurrentSession = 'auto';
 }
 
 async function onBufWritePre() {
   const doc = await workspace.document;
-  if (
-    formatOnSaveForCurrentSession === true ||
-    (formatOnSaveForCurrentSession === undefined && getRealFormatOnSave(doc))
-  ) {
+  const mode = autoFormatModeForCurrentSession;
+  const config = workspace.getConfiguration('coc.preferences');
+  if (mode === 'always' || (mode === 'auto' && config.get<boolean>('formatOnSave', false))) {
     doc.forceSync();
     await format(doc);
     doc.forceSync();
