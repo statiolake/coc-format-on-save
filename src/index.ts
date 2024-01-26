@@ -134,7 +134,7 @@ function disableCocFormatting(): boolean {
   const config = workspace.getConfiguration('coc.preferences');
   if (config.get<any[]>('formatOnSaveFiletypes') !== undefined) {
     window.showErrorMessage(
-      'You use `coc.preferences.formatOnSaveFiletypes` option ' +
+      'You are using `coc.preferences.formatOnSaveFiletypes` option ' +
         'in your coc.nvim config file. ' +
         'This prevents coc-format-on-save from working correctly. ' +
         'Also this property has been deprecated in coc.nvim side, ' +
