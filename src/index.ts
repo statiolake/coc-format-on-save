@@ -43,24 +43,24 @@ export async function activate(context: ExtensionContext): Promise<void> {
   context.subscriptions.push(registerCommand('format', async () => await format(await workspace.document)));
 
   context.subscriptions.push(
-    registerCommand('save', save),
-    registerCommand('forceSave', saveWith('write!', 'auto')),
-    registerCommand('saveAll', saveWith('wall', 'auto')),
-    registerCommand('forceSaveAll', saveWith('wall!', 'auto'))
+    registerCommand('save', saveWith('auto', 'write')),
+    registerCommand('forceSave', saveWith('auto', 'write!')),
+    registerCommand('saveAll', saveWith('auto', 'wall')),
+    registerCommand('forceSaveAll', saveWith('auto', 'wall!'))
   );
 
   context.subscriptions.push(
-    registerCommand('saveWithFormat', saveWith('write', 'always')),
-    registerCommand('forceSaveWithFormat', saveWith('write!', 'always')),
-    registerCommand('saveAllWithFormat', saveWith('wall', 'always')),
-    registerCommand('forceSaveAllWithFormat', saveWith('wall!', 'always'))
+    registerCommand('saveWithFormat', saveWith('always', 'write')),
+    registerCommand('forceSaveWithFormat', saveWith('always', 'write!')),
+    registerCommand('saveAllWithFormat', saveWith('always', 'wall')),
+    registerCommand('forceSaveAllWithFormat', saveWith('always', 'wall!'))
   );
 
   context.subscriptions.push(
-    registerCommand('saveWithoutFormat', saveWith('write', 'never')),
-    registerCommand('forceSaveWithoutFormat', saveWith('write!', 'never')),
-    registerCommand('saveAllWithoutFormat', saveWith('wall', 'never')),
-    registerCommand('forceSaveAllWithoutFormat', saveWith('wall!', 'never'))
+    registerCommand('saveWithoutFormat', saveWith('never', 'write')),
+    registerCommand('forceSaveWithoutFormat', saveWith('never', 'write!')),
+    registerCommand('saveAllWithoutFormat', saveWith('never', 'wall')),
+    registerCommand('forceSaveAllWithoutFormat', saveWith('never', 'wall!'))
   );
 }
 
@@ -151,14 +151,15 @@ function disableCocFormatting(): boolean {
   return true;
 }
 
-function saveWith(vimSaveCommand: VimSaveCommand, mode: AutoFormatMode): () => Promise<void> {
-  return async () => await save(vimSaveCommand, mode);
+function saveWith(mode: AutoFormatMode, vimSaveCommand: VimSaveCommand): (fileName?: string) => Promise<void> {
+  return async (fileName?: string) => await save(mode, vimSaveCommand, fileName);
 }
 
 let autoFormatModeForCurrentSession: AutoFormatMode;
-async function save(vimSaveCommand: VimSaveCommand = 'write', mode: AutoFormatMode = 'auto') {
+async function save(mode: AutoFormatMode = 'auto', vimSaveCommand: VimSaveCommand = 'write', fileName?: string) {
   autoFormatModeForCurrentSession = mode;
-  await workspace.nvim.command(vimSaveCommand);
+  const saveCommand = `${vimSaveCommand}${fileName ? ' ' + fileName : ''}`;
+  await workspace.nvim.command(saveCommand);
   autoFormatModeForCurrentSession = 'auto';
 }
 
