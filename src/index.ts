@@ -13,9 +13,6 @@ import {
 
 const channel = window.createOutputChannel('format-on-save');
 
-type VimSaveCommand = 'write' | 'write!' | 'wall' | 'wall!';
-type AutoFormatMode = 'auto' | 'always' | 'never';
-
 export async function activate(context: ExtensionContext): Promise<void> {
   const config = getConfig();
   if (!config.get<boolean>('enabled')) {
@@ -28,39 +25,13 @@ export async function activate(context: ExtensionContext): Promise<void> {
     return;
   }
 
-  context.subscriptions.push(
-    workspace.registerAutocmd({
-      event: 'BufWritePre',
-      request: true,
-      callback: onBufWritePre,
-    })
-  );
-
   const registerCommand = (id: string, fn: (...args: any[]) => Promise<void>): Disposable => {
     return commands.registerCommand(`format-on-save.${id}`, fn);
   };
 
   context.subscriptions.push(registerCommand('format', async () => await format(await workspace.document)));
-
   context.subscriptions.push(
-    registerCommand('save', saveWith('auto', 'write')),
-    registerCommand('forceSave', saveWith('auto', 'write!')),
-    registerCommand('saveAll', saveWith('auto', 'wall')),
-    registerCommand('forceSaveAll', saveWith('auto', 'wall!'))
-  );
-
-  context.subscriptions.push(
-    registerCommand('saveWithFormat', saveWith('always', 'write')),
-    registerCommand('forceSaveWithFormat', saveWith('always', 'write!')),
-    registerCommand('saveAllWithFormat', saveWith('always', 'wall')),
-    registerCommand('forceSaveAllWithFormat', saveWith('always', 'wall!'))
-  );
-
-  context.subscriptions.push(
-    registerCommand('saveWithoutFormat', saveWith('never', 'write')),
-    registerCommand('forceSaveWithoutFormat', saveWith('never', 'write!')),
-    registerCommand('saveAllWithoutFormat', saveWith('never', 'wall')),
-    registerCommand('forceSaveAllWithoutFormat', saveWith('never', 'wall!'))
+    registerCommand('formatOnDemand', async () => await formatOnDemand(await workspace.document))
   );
 }
 
@@ -84,6 +55,7 @@ async function format(doc: Document) {
     return;
   }
 
+  doc.forceSync();
   try {
     if (config.get<boolean>('organizeImportWithFormat')) {
       if (await hasOrganizeImportProvider(doc)) {
@@ -98,6 +70,15 @@ async function format(doc: Document) {
     await commands.executeCommand('editor.action.formatDocument');
   } catch (e) {
     void window.showErrorMessage(`Failed to format document: ${e}`);
+  } finally {
+    doc.forceSync();
+  }
+}
+
+async function formatOnDemand(doc: Document) {
+  const config = workspace.getConfiguration('coc.preferences');
+  if (config.get<boolean>('formatOnSave', false)) {
+    await format(doc);
   }
 }
 
@@ -149,27 +130,4 @@ function disableCocFormatting(): boolean {
   });
 
   return true;
-}
-
-function saveWith(mode: AutoFormatMode, vimSaveCommand: VimSaveCommand): (fileName?: string) => Promise<void> {
-  return async (fileName?: string) => await save(mode, vimSaveCommand, fileName);
-}
-
-let autoFormatModeForCurrentSession: AutoFormatMode;
-async function save(mode: AutoFormatMode = 'auto', vimSaveCommand: VimSaveCommand = 'write', fileName?: string) {
-  autoFormatModeForCurrentSession = mode;
-  const saveCommand = `${vimSaveCommand}${fileName ? ' ' + fileName : ''}`;
-  await workspace.nvim.command(saveCommand);
-  autoFormatModeForCurrentSession = 'auto';
-}
-
-async function onBufWritePre() {
-  const doc = await workspace.document;
-  const mode = autoFormatModeForCurrentSession;
-  const config = workspace.getConfiguration('coc.preferences');
-  if (mode === 'always' || (mode === 'auto' && config.get<boolean>('formatOnSave', false))) {
-    doc.forceSync();
-    await format(doc);
-    doc.forceSync();
-  }
 }
