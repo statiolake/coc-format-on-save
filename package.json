@@ -62,8 +62,12 @@
     },
     "commands": [
       {
+        "command": "format-on-save.formatOnDemand",
+        "title": "Format current document if formatting is enabled"
+      },
+      {
         "command": "format-on-save.format",
-        "title": "Format document"
+        "title": "Format current document"
       }
     ]
   }
