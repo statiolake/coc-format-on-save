@@ -22,7 +22,7 @@ const ConfigSchema = z.object({
       z.object({
         command: z.string(),
         args: z.array(z.string()).default([]),
-        commandType: z.union([z.literal('coc'), z.literal('vim')]).default('coc'),
+        commandType: z.union([z.literal('coc'), z.literal('vim'), z.literal('none')]).default('coc'),
       })
     )
     .default({}),
@@ -90,8 +90,11 @@ async function applyActions(config: Config) {
       case 'vim':
         await workspace.nvim.command(`${command} ${args.join(' ')}`);
         break;
+      case 'none':
+        channel.appendLine(`action ${action} is disabled. Skipping`);
+        break;
       default:
-        channel.appendLine(`Unknown commandType: ${commandType}; skipping`);
+        channel.appendLine(`Unknown commandType: ${commandType}. skipping`);
         break;
     }
   }
