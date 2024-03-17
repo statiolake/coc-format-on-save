@@ -19,11 +19,16 @@ const ConfigSchema = z.object({
   organizeImportWithFormat: z.boolean().default(true),
   actions: z
     .record(
-      z.object({
-        command: z.string(),
-        args: z.array(z.string()).default([]),
-        commandType: z.union([z.literal('coc'), z.literal('vim'), z.literal('none')]).default('coc'),
-      })
+      z.union([
+        z.object({
+          commandType: z.literal('none').default('none'),
+        }),
+        z.object({
+          command: z.string(),
+          args: z.array(z.string()).default([]),
+          commandType: z.union([z.literal('coc'), z.literal('vim')]).default('coc'),
+        }),
+      ])
     )
     .default({}),
 });
@@ -72,13 +77,14 @@ async function doActionsBeforeFormat(doc: Document) {
 
 async function applyActions(config: Config) {
   const actions = config.actions;
-  for (const action in actions) {
-    const { command, args, commandType } = actions[action];
-    channel.appendLine(
-      `running action: ${action}, command: ${command}, args: ${JSON.stringify(args)}, commandType: ${commandType}`
-    );
-    switch (commandType) {
-      case 'coc':
+  for (const actionName in actions) {
+    const action = actions[actionName];
+
+    channel.appendLine(`running action: ${JSON.stringify(action)}`);
+
+    switch (action.commandType) {
+      case 'coc': {
+        const { command, args } = action;
         await commands.executeCommand(command, ...args);
         // Wait for some time to ensure the command response is processed.
         // Some commands (like eslint.executeAutofix) does not fix by itself
@@ -87,14 +93,14 @@ async function applyActions(config: Config) {
         // enough.
         await new Promise((resolve) => setTimeout(resolve, 500));
         break;
-      case 'vim':
+      }
+      case 'vim': {
+        const { command, args } = action;
         await workspace.nvim.command(`${command} ${args.join(' ')}`);
         break;
+      }
       case 'none':
-        channel.appendLine(`action ${action} is disabled. Skipping`);
-        break;
-      default:
-        channel.appendLine(`Unknown commandType: ${commandType}. skipping`);
+        channel.appendLine(`action ${actionName} is disabled. Skipping`);
         break;
     }
   }
