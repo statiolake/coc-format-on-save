@@ -25,6 +25,10 @@ local function on_buf_write()
 	end
 end
 
+---Save with the command
+---@param mode "auto" | "always" | "never"
+---@param vim_save_command string
+---@param file_name string
 function M.save(mode, vim_save_command, file_name)
 	format_on_save_mode = mode
 	local save_command = vim_save_command
