@@ -91,7 +91,8 @@ async function applyActions(config: Config) {
         await workspace.nvim.command(`${command} ${args.join(' ')}`);
         break;
       default:
-        throw new Error(`Unknown commandType: ${commandType}`);
+        channel.appendLine(`Unknown commandType: ${commandType}; skipping`);
+        break;
     }
   }
 }
