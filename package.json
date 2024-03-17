@@ -51,12 +51,43 @@
         "format-on-save.sortCocSettingsJson": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "Sort coc-settings.json"
         },
         "format-on-save.organizeImportWithFormat": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "Organize import on save too"
+        },
+        "format-on-save.actions": {
+          "type": "object",
+          "scope": "language-overridable",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "description": "coc command or Vim command to run"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arguments to pass to the command"
+              },
+              "commandType": {
+                "type": "enum",
+                "enum": [
+                  "coc",
+                  "vim"
+                ],
+                "default": "coc",
+                "description": "Command type"
+              }
+            }
+          }
         }
       }
     },
@@ -70,5 +101,8 @@
         "title": "Format current document"
       }
     ]
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
   }
 }
