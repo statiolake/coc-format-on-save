@@ -1,0 +1,63 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Set up git identity
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'statiolake@gmail.com'
+
+      - name: Checkout release branch
+        run: |
+          if ! git rev-parse --verify origin/release >& /dev/null; then
+            # Create orphan release branch if not exists.
+            git checkout --orphan release
+            git commit --allow-empty -m "intiial build commit"
+            git push -u origin release
+            git checkout master
+          else
+            # Bring remote release branch to local.
+            git checkout release
+            git checkout master
+          fi
+
+      - name: Install & Build extension
+        run: yarn
+
+      - name: Deploy to release branch
+        run: |
+          COMMIT="$(git rev-parse --short HEAD)"
+
+          # Bring this working tree to the release branch preserving release
+          # branch's history.
+          git checkout -b __next-release
+          git reset release
+          git checkout release
+          git branch -D __next-release
+
+          # Force add build artifacts
+          git add -f lib
+          git commit -m "build $COMMIT"
+
+          git push origin release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
