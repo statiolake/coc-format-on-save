@@ -21,6 +21,11 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Set up git identity
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'statiolake@gmail.com'
+
       - name: Checkout release branch
         run: |
           if ! git rev-parse --verify origin/release >& /dev/null; then
@@ -49,8 +54,7 @@ jobs:
           git checkout release
           git branch -D __next-release
 
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'statiolake@gmail.com'
+          # Force add build artifacts
           git add -f lib
           git commit -m "build $COMMIT"
 
