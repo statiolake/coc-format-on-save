@@ -1,0 +1,37 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Checkout the release branch
+        run: git checkout -B release
+
+      - name: Install & Build extension
+        run: yarn
+
+      - name: Deploy to release branch
+        run: |
+          COMMIT="$(git rev-parse --short HEAD)"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'statiolake@gmail.com'
+          git add -f lib
+          git commit -m "build $COMMIT"
+          git push --force origin release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
