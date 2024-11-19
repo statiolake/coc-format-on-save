@@ -60,6 +60,24 @@
           "scope": "language-overridable",
           "description": "Organize import on save too"
         },
+        "format-on-save.formatterTimeout": {
+          "type": "number",
+          "default": 5000,
+          "scope": "application",
+          "description": "Timeout for LSP formatter"
+        },
+        "format-on-save.actionTimeout": {
+          "type": "number",
+          "default": 5000,
+          "scope": "application",
+          "description": "Timeout for actions"
+        },
+        "format-on-save.waitAfterAction": {
+          "type": "number",
+          "default": 500,
+          "scope": "application",
+          "description": "Wait after executing action to ensure change occurs"
+        },
         "format-on-save.actions": {
           "type": "object",
           "scope": "language-overridable",
