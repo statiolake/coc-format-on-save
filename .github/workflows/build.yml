@@ -28,7 +28,7 @@ jobs:
 
       - name: Checkout release branch
         run: |
-          if ! git rev-parse --verify origin/release >& /dev/null; then
+          if ! git fetch --depth 1 origin release >& /dev/null; then
             # Create orphan release branch if not exists.
             git checkout --orphan release
             git commit --allow-empty -m "intiial build commit"
