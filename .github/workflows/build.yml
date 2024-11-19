@@ -55,6 +55,7 @@ jobs:
           git branch -D __next-release
 
           # Force add build artifacts
+          git add .
           git add -f lib
           git commit -m "build $COMMIT"
 
