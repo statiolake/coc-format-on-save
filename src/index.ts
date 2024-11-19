@@ -17,6 +17,9 @@ const ConfigSchema = z.object({
   enabled: z.boolean().default(true),
   sortCocSettingsJson: z.boolean().default(true),
   organizeImportWithFormat: z.boolean().default(true),
+  formatterTimeout: z.number().default(5000),
+  actionTimeout: z.number().default(5000),
+  waitAfterAction: z.number().default(500),
   actions: z
     .record(
       z.union([
@@ -34,15 +37,19 @@ const ConfigSchema = z.object({
 });
 type Config = z.infer<typeof ConfigSchema>;
 
+function log(message: string) {
+  channel.appendLine(`${Date.now()}: ${message}`);
+}
+
 export async function activate(context: ExtensionContext): Promise<void> {
   const config = getConfig(undefined);
   if (!config.enabled) {
-    channel.appendLine('coc-format-on-save extension is disabled');
+    log('coc-format-on-save extension is disabled');
     return;
   }
 
   if (!disableCocFormatting()) {
-    channel.appendLine('disabling coc formatting failed.');
+    log('disabling coc formatting failed.');
     return;
   }
 
@@ -59,59 +66,16 @@ export async function activate(context: ExtensionContext): Promise<void> {
 function getConfig(doc?: Document): Config {
   // @ts-ignore: type definition for workspace.getConfiguration() is old
   const config = workspace.getConfiguration('format-on-save', doc);
-  return ConfigSchema.parse({
-    enabled: config.get<boolean>('enabled'),
-    sortCocSettingsJson: config.get<boolean>('sortCocSettingsJson'),
-    organizeImportWithFormat: config.get<boolean>('organizeImportWithFormat'),
-    actions: config.get<unknown>('actions'),
-  });
-}
-
-async function doActionsBeforeFormat(doc: Document) {
-  const config = getConfig(doc);
-
-  await sortJsonIfNeeded(config, doc);
-  await organizeImportIfNeeded(config, doc);
-  await applyActions(config);
-}
-
-async function applyActions(config: Config) {
-  const actions = config.actions;
-  for (const actionName in actions) {
-    const action = actions[actionName];
-
-    channel.appendLine(`running action: ${JSON.stringify(action)}`);
-
-    switch (action.commandType) {
-      case 'coc': {
-        const { command, args } = action;
-        await commands.executeCommand(command, ...args);
-        // Wait for some time to ensure the command response is processed.
-        // Some commands (like eslint.executeAutofix) does not fix by itself
-        // but triggers a new command (eslint.applyAutoFix) to fix the
-        // document. So awaiting the completion of above command is not
-        // enough.
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        break;
-      }
-      case 'vim': {
-        const { command, args } = action;
-        await workspace.nvim.command(`${command} ${args.join(' ')}`);
-        break;
-      }
-      case 'none':
-        channel.appendLine(`action ${actionName} is disabled. Skipping`);
-        break;
-    }
-  }
+  return ConfigSchema.parse(config.get(''));
 }
 
 async function sortJsonIfNeeded(config: Config, doc: Document) {
   if (config.sortCocSettingsJson && isCocConfigFile(doc)) {
+    log('- sort coc-settings.json');
     try {
-      await commands.executeCommand('formatJson', '--sort-keys');
+      await withTimeout(config.actionTimeout, 'sorting json', commands.executeCommand('formatJson', '--sort-keys'));
     } catch (e) {
-      void window.showWarningMessage(`Failed to sort coc-settings.json: ${e}`);
+      log(`  ! Failed to sort coc-settings.json: ${e}`);
     }
   }
 }
@@ -119,47 +83,70 @@ async function sortJsonIfNeeded(config: Config, doc: Document) {
 async function organizeImportIfNeeded(config: Config, doc: Document) {
   if (config.organizeImportWithFormat) {
     if (await hasOrganizeImportProvider(doc)) {
-      channel.appendLine('organize imports');
-      await commands.executeCommand('editor.action.organizeImport');
+      log('- organize imports');
+      await withTimeout(
+        config.actionTimeout,
+        'organizing import',
+        commands.executeCommand('editor.action.organizeImport')
+      );
     } else {
-      channel.appendLine('organizeImport is not supported');
+      log('  ! organizeImport is not supported');
     }
   }
 }
 
-async function format(doc: Document) {
-  const config = getConfig(doc);
+async function applyConfiguredActions(config: Config) {
+  const actions = config.actions;
+  for (const actionName in actions) {
+    const action = actions[actionName];
 
-  if (config.sortCocSettingsJson && isCocConfigFile(doc)) {
-    try {
-      await commands.executeCommand('formatJson', '--sort-keys');
-    } catch (e) {
-      void window.showWarningMessage(`Failed to sort coc-settings.json: ${e}`);
+    log(`- execute configured action: ${JSON.stringify(action)}`);
+
+    switch (action.commandType) {
+      case 'coc': {
+        const { command, args } = action;
+        await withTimeout(
+          config.actionTimeout,
+          `executing coc action: ${action.command}`,
+          commands.executeCommand(command, ...args)
+        );
+
+        // Wait for some time to ensure the command response is processed.
+        // Some commands (like eslint.executeAutofix) does not fix by itself
+        // but triggers a new command (eslint.applyAutoFix) to fix the
+        // document. So awaiting the completion of above command is not
+        // enough.
+        await new Promise((resolve) => setTimeout(resolve, config.waitAfterAction));
+        break;
+      }
+      case 'vim': {
+        const { command, args } = action;
+        await withTimeout(
+          config.actionTimeout,
+          `executing Vim command: ${command}`,
+          workspace.nvim.command(`${command} ${args.join(' ')}`)
+        );
+        break;
+      }
+      case 'none':
+        log(`  ! action ${actionName} is disabled. Skipping`);
+        break;
     }
   }
+}
 
+async function doLSPFormattingIfAvailable(config: Config, doc: Document) {
+  log('- execute LSP formatting');
   if (!hasFormatProvider(doc)) {
-    void window.showWarningMessage('Format provider not found for current document');
+    log('  ! Format provider not found for current document');
     return;
   }
 
-  doc.forceSync();
-  try {
-    await doActionsBeforeFormat(doc);
-    channel.appendLine('format document');
-    await commands.executeCommand('editor.action.formatDocument');
-  } catch (e) {
-    void window.showErrorMessage(`Failed to format document: ${e}`);
-  } finally {
-    doc.forceSync();
-  }
-}
-
-async function formatOnDemand(doc: Document) {
-  const config = workspace.getConfiguration('coc.preferences');
-  if (config.get<boolean>('formatOnSave', false)) {
-    await format(doc);
-  }
+  await withTimeout(
+    config.formatterTimeout,
+    'formatting by LSP',
+    commands.executeCommand('editor.action.formatDocument')
+  );
 }
 
 function isCocConfigFile(doc: Document): boolean {
@@ -182,7 +169,7 @@ async function hasOrganizeImportProvider(doc: Document): Promise<boolean> {
   const tokenSource = new CancellationTokenSource();
   // @ts-ignore
   const codeActions = await languages.getCodeActions(doc.textDocument, range, context, tokenSource.token);
-  channel.appendLine(`codeActions: ${JSON.stringify(codeActions)}`);
+  log(`- codeActions: ${JSON.stringify(codeActions)}`);
   return codeActions && codeActions.length;
 }
 
@@ -210,4 +197,42 @@ function disableCocFormatting(): boolean {
   });
 
   return true;
+}
+
+async function withTimeout(timeout: number, duringWhat: string, promise: Promise<void>) {
+  let timer: number | null = null;
+  const timerPromise = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`timeout reached during ${duringWhat}`));
+    }, timeout);
+  });
+
+  await Promise.race([promise, timerPromise]);
+  if (timer != null) clearTimeout(timer);
+}
+
+async function format(doc: Document) {
+  try {
+    doc.forceSync();
+
+    const config = getConfig(doc);
+
+    log('start formatting document');
+    await sortJsonIfNeeded(config, doc);
+    await organizeImportIfNeeded(config, doc);
+    await applyConfiguredActions(config);
+    await doLSPFormattingIfAvailable(config, doc);
+  } catch (e) {
+    void window.showErrorMessage(`Failed to format document: ${e}`);
+  } finally {
+    doc.forceSync();
+    log('finish formatting document');
+  }
+}
+
+async function formatOnDemand(doc: Document) {
+  const config = workspace.getConfiguration('coc.preferences');
+  if (config.get<boolean>('formatOnSave', false)) {
+    await format(doc);
+  }
 }
