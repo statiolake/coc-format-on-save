@@ -48,7 +48,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (!disableCocFormatting()) {
+  if (!disableBuitinCocFormatting()) {
     log('disabling coc formatting failed.');
     return;
   }
@@ -178,7 +178,7 @@ async function hasOrganizeImportProvider(doc: Document): Promise<boolean> {
  * false if `coc.preferences.formatOnSaveFiletypes` is set in coc.nvim config
  * file.
  */
-function disableCocFormatting(): boolean {
+function disableBuitinCocFormatting(): boolean {
   const config = workspace.getConfiguration('coc.preferences');
   if (config.get<any[]>('formatOnSaveFiletypes') !== undefined) {
     window.showErrorMessage(
@@ -190,7 +190,18 @@ function disableCocFormatting(): boolean {
     );
   }
 
-  // Ignore TypeScript because updateMemoryConfig() is a hidden API.
+  // On coc.nvim, `coc.preferences.formatOnSaveFiletypes` takes precedence
+  // over `coc.preferences.formatOnSave`. By emptying the formar, we can
+  // safely disable formatting for all files on save without breaking the
+  // latter option. Moreover, the former is a deprecated option, so we can
+  // inform users not to use the option.
+  //
+  // To temporary disable formatting, we need to change
+  // `coc.preferences.formatOnSaveFiletypes` without updating config files.
+  // `workspace.getConfiguration().update()` persists the configuration in
+  // config files, so we can't use it here. We have a hidden API,
+  // updateMemoryConfig() to do that. We need to ignore type checker here to
+  // forcefully call the hidden API.
   // @ts-ignore
   workspace.configurations.updateMemoryConfig({
     'coc.preferences.formatOnSaveFiletypes': [],
@@ -211,7 +222,17 @@ async function withTimeout(timeout: number, duringWhat: string, promise: Promise
   if (timer != null) clearTimeout(timer);
 }
 
+async function saveView() {
+  const view = await workspace.nvim.call('winsaveview');
+  return view;
+}
+
+async function restoreView(view: any) {
+  await workspace.nvim.call('winrestview', [view]);
+}
+
 async function format(doc: Document) {
+  const view = await saveView();
   try {
     doc.forceSync();
 
@@ -226,13 +247,13 @@ async function format(doc: Document) {
     void window.showErrorMessage(`Failed to format document: ${e}`);
   } finally {
     doc.forceSync();
+    await restoreView(view);
     log('finish formatting document');
   }
 }
 
 async function formatOnDemand(doc: Document) {
   const config = workspace.getConfiguration('coc.preferences');
-  if (config.get<boolean>('formatOnSave', false)) {
-    await format(doc);
-  }
+  if (!config.get<boolean>('formatOnSave', false)) return;
+  await format(doc);
 }
