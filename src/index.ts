@@ -73,7 +73,7 @@ async function sortJsonIfNeeded(config: Config, doc: Document) {
   if (config.sortCocSettingsJson && isCocConfigFile(doc)) {
     log('- sort coc-settings.json');
     try {
-      await withTimeout(config.actionTimeout, 'sorting json', commands.executeCommand('formatJson', '--sort-keys'));
+      await withTimeout(config.actionTimeout, 'sorting json', commands.executeCommand('coc-sort-json.sort'));
     } catch (e) {
       log(`  ! Failed to sort coc-settings.json: ${e}`);
     }
