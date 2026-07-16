@@ -50,16 +50,6 @@ function M.setup()
     pattern = '*',
     callback = on_buf_write,
   })
-
-  vim.api.nvim_create_user_command('W', function(ctx)
-    local command = ctx.bang and 'write!' or 'write'
-    M.save('never', command, ctx.args)
-  end, { nargs = '?', bang = true })
-
-  vim.api.nvim_create_user_command('WA', function(ctx)
-    local command = ctx.bang and 'wall!' or 'wall'
-    M.save('never', command)
-  end, { nargs = 0, bang = true })
 end
 
 return M
