@@ -30,28 +30,36 @@ end
 ---@param vim_save_command string
 ---@param file_name string
 function M.save(mode, vim_save_command, file_name)
+  local previous_mode = format_on_save_mode
   format_on_save_mode = mode
-  local save_command = vim_save_command
-  if file_name then
-    save_command = string.format('%s %s', save_command, file_name)
+  local ok, err = pcall(vim.cmd, {
+    cmd = vim_save_command,
+    args = file_name and file_name ~= '' and { file_name } or {},
+  })
+  format_on_save_mode = previous_mode
+  if not ok then
+    error(err)
   end
-  vim.cmd(save_command)
-  format_on_save_mode = 'auto'
 end
 
 function M.setup()
+  local group =
+    vim.api.nvim_create_augroup('CocFormatOnSave', { clear = true })
   vim.api.nvim_create_autocmd('BufWritePre', {
+    group = group,
     pattern = '*',
     callback = on_buf_write,
   })
 
   vim.api.nvim_create_user_command('W', function(ctx)
-    M.save('never', 'write' .. (ctx.bang and '!' or ''), ctx.args)
+    local command = ctx.bang and 'write!' or 'write'
+    M.save('never', command, ctx.args)
   end, { nargs = '?', bang = true })
 
   vim.api.nvim_create_user_command('WA', function(ctx)
-    M.save('never', 'wall' .. (ctx.bang and '!' or ''), ctx.args)
-  end, { nargs = '?', bang = true })
+    local command = ctx.bang and 'wall!' or 'wall'
+    M.save('never', command)
+  end, { nargs = 0, bang = true })
 end
 
 return M
