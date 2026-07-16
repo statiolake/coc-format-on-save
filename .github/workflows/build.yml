@@ -24,7 +24,7 @@ jobs:
       - name: Set up git identity
         run: |
           git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'statiolake@gmail.com'
+          git config --global user.email '20490597+statiolake@users.noreply.github.com'
 
       - name: Checkout release branch
         run: |

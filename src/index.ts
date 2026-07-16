@@ -4,6 +4,7 @@ import {
   Document,
   ExtensionContext,
   Range,
+  TextEdit,
   commands,
   languages,
   window,
@@ -16,6 +17,7 @@ const channel = window.createOutputChannel('format-on-save');
 const ConfigSchema = z.object({
   enabled: z.boolean().default(true),
   sortCocSettingsJson: z.boolean().default(true),
+  trimTrailingWhitespace: z.boolean().default(true),
   organizeImportWithFormat: z.boolean().default(true),
   formatterTimeout: z.number().default(5000),
   actionTimeout: z.number().default(5000),
@@ -48,7 +50,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (!disableBuitinCocFormatting()) {
+  if (!disableBuiltinCocFormatting()) {
     log('disabling coc formatting failed.');
     return;
   }
@@ -77,6 +79,23 @@ async function sortJsonIfNeeded(config: Config, doc: Document) {
     } catch (e) {
       log(`  ! Failed to sort coc-settings.json: ${e}`);
     }
+  }
+}
+
+async function trimTrailingWhitespaceIfNeeded(config: Config, doc: Document) {
+  if (!config.trimTrailingWhitespace) return;
+
+  const edits: TextEdit[] = [];
+  for (let line = 0; line < doc.lineCount; line++) {
+    const text = doc.getline(line);
+    const match = text.match(/[\t ]+$/);
+    if (match?.index == null) continue;
+    edits.push(TextEdit.del(Range.create(line, match.index, line, text.length)));
+  }
+
+  if (edits.length > 0) {
+    log(`- trim trailing whitespace from ${edits.length} lines`);
+    await doc.applyEdits(edits);
   }
 }
 
@@ -178,7 +197,7 @@ async function hasOrganizeImportProvider(doc: Document): Promise<boolean> {
  * false if `coc.preferences.formatOnSaveFiletypes` is set in coc.nvim config
  * file.
  */
-function disableBuitinCocFormatting(): boolean {
+function disableBuiltinCocFormatting(): boolean {
   const config = workspace.getConfiguration('coc.preferences');
   if (config.get<any[]>('formatOnSaveFiletypes') !== undefined) {
     window.showErrorMessage(
@@ -239,6 +258,7 @@ async function format(doc: Document) {
     const config = getConfig(doc);
 
     log('start formatting document');
+    await trimTrailingWhitespaceIfNeeded(config, doc);
     await sortJsonIfNeeded(config, doc);
     await organizeImportIfNeeded(config, doc);
     await applyConfiguredActions(config);
